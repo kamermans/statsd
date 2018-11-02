@@ -2,6 +2,7 @@ package statsd
 
 import (
 	"bytes"
+	"log/syslog"
 	"strings"
 	"time"
 )
@@ -19,12 +20,14 @@ type clientConfig struct {
 }
 
 type connConfig struct {
-	Addr          string
-	ErrorHandler  func(error)
-	FlushPeriod   time.Duration
-	MaxPacketSize int
-	Network       string
-	TagFormat     TagFormat
+	Addr           string
+	ErrorHandler   func(error)
+	FlushPeriod    time.Duration
+	MaxPacketSize  int
+	Network        string
+	TagFormat      TagFormat
+	Syslog         bool
+	SyslogPriority syslog.Priority
 }
 
 // An Option represents an option for a Client. It must be used as an
@@ -248,3 +251,11 @@ var (
 		},
 	}
 )
+
+// Syslog enables syslog support
+func Syslog(pri syslog.Priority) Option {
+	return Option(func(c *config) {
+		c.Conn.Syslog = true
+		c.Conn.SyslogPriority = pri
+	})
+}

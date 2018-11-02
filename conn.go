@@ -2,6 +2,7 @@ package statsd
 
 import (
 	"io"
+	"log/syslog"
 	"math/rand"
 	"net"
 	"strconv"
@@ -11,12 +12,14 @@ import (
 
 type conn struct {
 	// Fields settable with options at Client's creation.
-	addr          string
-	errorHandler  func(error)
-	flushPeriod   time.Duration
-	maxPacketSize int
-	network       string
-	tagFormat     TagFormat
+	addr           string
+	errorHandler   func(error)
+	flushPeriod    time.Duration
+	maxPacketSize  int
+	network        string
+	tagFormat      TagFormat
+	syslog         bool
+	syslogPriority syslog.Priority
 
 	mu sync.Mutex
 	// Fields guarded by the mutex.
@@ -28,12 +31,14 @@ type conn struct {
 
 func newConn(conf connConfig, muted bool) (*conn, error) {
 	c := &conn{
-		addr:          conf.Addr,
-		errorHandler:  conf.ErrorHandler,
-		flushPeriod:   conf.FlushPeriod,
-		maxPacketSize: conf.MaxPacketSize,
-		network:       conf.Network,
-		tagFormat:     conf.TagFormat,
+		addr:           conf.Addr,
+		errorHandler:   conf.ErrorHandler,
+		flushPeriod:    conf.FlushPeriod,
+		maxPacketSize:  conf.MaxPacketSize,
+		network:        conf.Network,
+		tagFormat:      conf.TagFormat,
+		syslog:         conf.Syslog,
+		syslogPriority: conf.SyslogPriority,
 	}
 
 	if muted {
@@ -193,6 +198,9 @@ func isNegative(v interface{}) bool {
 }
 
 func (c *conn) appendBucket(prefix, bucket string, tags string) {
+	if c.syslog {
+		c.appendString(SyslogHeader(c.syslogPriority))
+	}
 	c.appendString(prefix)
 	c.appendString(bucket)
 	if c.tagFormat == InfluxDB {
@@ -232,7 +240,7 @@ func (c *conn) closeMetric(tags string) {
 }
 
 func (c *conn) flushIfBufferFull(lastSafeLen int) {
-	if len(c.buf) > c.maxPacketSize {
+	if c.syslog || len(c.buf) > c.maxPacketSize {
 		c.flush(lastSafeLen)
 	}
 }
@@ -250,6 +258,7 @@ func (c *conn) flush(n int) {
 	// Trim the last \n, StatsD does not like it.
 	_, err := c.w.Write(c.buf[:n-1])
 	c.handleError(err)
+
 	if n < len(c.buf) {
 		copy(c.buf, c.buf[n:])
 	}
